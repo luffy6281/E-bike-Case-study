@@ -1,0 +1,168 @@
+---------Creating a temporary table by combining data from March, 2022 to February, 2023--------------------
+
+SELECT *
+  INTO  #trips_data 
+FROM
+(
+SELECT * FROM master..Mar_22
+UNION ALL
+SELECT * FROM master..Apr_22
+UNION ALL
+SELECT * FROM master..May_22
+UNION ALL
+SELECT * FROM master..Jun_22
+UNION ALL
+SELECT * FROM master..Jul_22
+UNION ALL
+SELECT * FROM master..Aug_22
+UNION ALL
+SELECT * FROM master..Sep_22
+UNION ALL
+SELECT * FROM master..Oct_22
+UNION ALL
+SELECT * FROM master..Nov22_Feb23
+)a;
+
+------------------------------------Cleaning the Data by removing null entries-------------------------------
+
+DELETE
+FROM #trips_Data
+WHERE RIDE_ID IS NULL
+OR RIDEABLE_TYPE IS NULL
+OR STARTED_AT IS NULL
+OR ENDED_AT IS NULL
+OR START_LAT IS NULL
+OR START_LNG IS NULL
+OR END_LAT IS NULL
+OR END_LNG IS NULL
+OR MEMBER_CASUAL IS NULL;
+
+------------------------------------Cleaning the Data by removing incorrect entries-------------------------------
+
+DELETE 
+FROM #trips_Data
+WHERE STARTED_AT >= ENDED_AT;
+
+DELETE 
+FROM #trips_Data
+WHERE (START_LAT< -90 AND START_LAT> 90)
+OR (END_LAT< -90 AND END_LAT> 90)
+OR (start_lng< -180 AND start_lng>180)
+OR (END_lng< -180 AND END_lng>180);
+
+-----------------------------------------------------------------------------------------------------------------------------------------------------------------------
+----------------------------------------------           DATA ANALYSIS              ---------------------------------------------------------------------------
+
+ALTER TABLE #trips_data
+ADD TRIP_DURATION_SECS INT;
+
+-------------Calculate trip length------------
+UPDATE #trips_data
+SET TRIP_DURATION_SECS= DATEDIFF(second, started_at, ended_at);
+
+
+-----------------MEM_CAS_RIDES Table--------------
+SELECT MEMBER_CASUAL, COUNT(*) AS NO_OF_RIDES
+FROM #trips_data
+GROUP BY MEMBER_CASUAL
+ORDER BY NO_OF_RIDES DESC;
+
+
+------------------BIKE_RIDES Table--------------
+SELECT RIDEABLE_TYPE, COUNT(*) AS NO_OF_RIDES
+FROM #trips_data
+GROUP BY RIDEABLE_TYPE
+ORDER BY COUNT(*) DESC;
+
+
+-----------------------MEM_CAS_BIKE_RIDES Table--------------
+SELECT RIDEABLE_TYPE, MEMBER_CASUAL, COUNT(*) AS NO_OF_RIDES 
+FROM #trips_data
+GROUP BY RIDEABLE_TYPE,MEMBER_CASUAL
+ORDER BY RIDEABLE_TYPE ASC, COUNT(*) DESC;
+
+
+----------------------- No_RIDES Table-------------
+SELECT START_STATION_NAME, END_STATION_NAME, RIDEABLE_TYPE, MEMBER_CASUAL, COUNT(*) AS NO_OF_TRIPS
+FROM #trips_data
+GROUP BY START_STATION_NAME,END_STATION_NAME, RIDEABLE_TYPE, MEMBER_CASUAL
+ORDER BY START_STATION_NAME, END_STATION_NAME, COUNT(*) DESC, RIDEABLE_TYPE;
+
+
+----------------------- ROUND_RIDES Table-------------
+SELECT START_STATION_NAME, END_STATION_NAME, RIDEABLE_TYPE, MEMBER_CASUAL, COUNT(*) AS NO_OF_ROUND_TRIPS
+    FROM #trips_data
+    WHERE START_STATION_NAME = END_STATION_NAME
+    GROUP BY START_STATION_NAME,END_STATION_NAME, RIDEABLE_TYPE, MEMBER_CASUAL
+    ORDER BY START_STATION_NAME, END_STATION_NAME, COUNT(*) DESC, RIDEABLE_TYPE;
+
+
+-------------------RIDES_WEEKLY Table-----------------
+	SELECT DATENAME(month,STARTED_AT) AS Month_Name, DATEPART(WEEK, STARTED_AT) AS Week_No, MEMBER_CASUAL, COUNT(*) AS NO_OF_RIDES
+    FROM #trips_data
+    GROUP BY DATENAME(month,STARTED_AT), DATEPART(WEEK, STARTED_AT),MEMBER_CASUAL
+	ORDER BY DATENAME(month,STARTED_AT), DATEPART(WEEK, STARTED_AT),MEMBER_CASUAL ;
+
+
+--------------------RIDES_DaysWise Table-----------------
+
+SELECT DATENAME(WEEKDAY, STARTED_AT) AS Day_Name, MEMBER_CASUAL, COUNT(*) AS NO_OF_RIDES
+    FROM #trips_data
+    GROUP BY DATENAME(WEEKDAY, STARTED_AT),MEMBER_CASUAL
+	ORDER BY DATENAME(WEEKDAY, STARTED_AT),COUNT(*) DESC, MEMBER_CASUAL;
+
+
+-------------------RIDES_MONTHLY Table-----------------
+    SELECT DATEPART(MONTH, STARTED_AT) AS Month_No, MEMBER_CASUAL, COUNT(*) AS NO_OF_RIDES
+    FROM #trips_data
+    GROUP BY DATEPART(MONTH, STARTED_AT),MEMBER_CASUAL
+	ORDER BY DATEPART(MONTH, STARTED_AT), COUNT(*) DESC, MEMBER_CASUAL;
+
+
+-------------------RIDES_QUARTERLY Table-----------------
+SELECT DATEPART(YEAR,STARTED_AT) as YR,
+	DATENAME(month,STARTED_AT) AS Month_Name,
+ DATEPART(QUARTER,STARTED_AT) as Qrtr, MEMBER_CASUAL, COUNT(*) AS NO_OF_RIDES
+FROM #trips_data
+GROUP BY DATEPART(YEAR,STARTED_AT),DATENAME(month,STARTED_AT), DATEPART(QUARTER,STARTED_AT), MEMBER_CASUAL
+ORDER BY 1,2,3,4
+
+
+-- -----------------CASUAL_RIDES_Week Table-----------------
+SELECT DATENAME(month,STARTED_AT) AS Month_Name, DATEPART(WEEK, STARTED_AT) AS Week_No, MEMBER_CASUAL, COUNT(*) AS NO_OF_RIDES
+    FROM #trips_data
+    WHERE MEMBER_CASUAL = 'casual'
+    GROUP BY DATENAME(month,STARTED_AT), DATEPART(WEEK, STARTED_AT),MEMBER_CASUAL
+	ORDER BY DATENAME(month,STARTED_AT), DATEPART(WEEK, STARTED_AT),COUNT(*) DESC, MEMBER_CASUAL;
+
+
+-------------------MEMBER_RIDES Week Table-----------------
+SELECT DATENAME(month,STARTED_AT) AS Month_Name, DATEPART(WEEK, STARTED_AT) AS Week_No, MEMBER_CASUAL, COUNT(*) AS NO_OF_RIDES
+    FROM #trips_data
+    WHERE MEMBER_CASUAL = 'member'
+    GROUP BY DATENAME(month,STARTED_AT), DATEPART(WEEK, STARTED_AT),MEMBER_CASUAL
+	ORDER BY DATENAME(month,STARTED_AT), DATEPART(WEEK, STARTED_AT),COUNT(*) DESC, MEMBER_CASUAL;
+
+
+-------------------Trip_duration Table-----------------
+Select rideable_type, member_casual,COUNT(*) AS NO_OF_RIDES, TRIP_DURATION_SECS, ROUND((TRIP_DURATION_SECS/3600),2) as Time_Hr,
+	CASE
+		When TRIP_DURATION_SECS<900 Then '<0.25 Hr'
+		When TRIP_DURATION_SECS<3600 Then '0.25-1 Hr'
+		When TRIP_DURATION_SECS<10800 Then '1-3 Hrs'
+		When TRIP_DURATION_SECS<21600 Then '3-6 Hrs'
+		When TRIP_DURATION_SECS<43200 Then '6-12 Hrs'
+		Else '12-25 Hrs' END As Trip_Duration
+
+FROM #trips_data
+Group by rideable_type, member_casual, TRIP_DURATION_SECS
+Order by rideable_type,TRIP_DURATION_SECS DESC, member_casual;
+
+
+---------------------Hourly Variation-------------
+SELECT DATEPART(HOUR, STARTED_AT) AS Hour_No, MEMBER_CASUAL, COUNT(*) AS NO_OF_RIDES
+    FROM #trips_data
+    GROUP BY DATEPART(HOUR, STARTED_AT),MEMBER_CASUAL
+	ORDER BY DATEPART(HOUR, STARTED_AT),COUNT(*) DESC, MEMBER_CASUAL;
+
+
